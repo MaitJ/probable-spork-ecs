@@ -1,6 +1,6 @@
 use std::{any::{Any, TypeId}, cell::{RefCell, Ref, RefMut}, borrow::BorrowMut, collections::HashMap};
 pub trait Component {
-    fn setup(&self);
+    fn setup(&mut self);
     fn update(&mut self, world: &ComponentStorage);
 }
 
@@ -17,7 +17,7 @@ pub trait ComponentArray: AsAny {
 impl<T: Component + 'static> ComponentArray for Vec<RefCell<T>> {
     fn setup_components(&self) {
         self.iter().for_each(|c| {
-            let component = c.borrow();
+            let mut component = c.borrow_mut();
             component.setup();
         })
     }
