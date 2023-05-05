@@ -1,5 +1,5 @@
 use std::{any::{Any, TypeId}, cell::{RefCell, Ref, RefMut}, borrow::BorrowMut, collections::HashMap};
-pub trait Component {
+pub trait Component: PartialEq {
     fn setup(&mut self);
     fn update(&mut self, world: &ComponentStorage);
 }
