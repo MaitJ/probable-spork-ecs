@@ -64,7 +64,7 @@ impl ComponentStorage {
         }
     }
 
-    fn get_component_vec<T: Component + 'static>(&self) -> Option<&Vec<RefCell<T>>> {
+    pub fn get_component_vec<T: Component + 'static>(&self) -> Option<&Vec<RefCell<T>>> {
         for component_vec in self.component_vectors.iter() {
             let component_vec_ref = component_vec.as_ref();
             if let Some(cv) = component_vec_ref.as_any().downcast_ref::<Vec<RefCell<T>>>() {
@@ -74,7 +74,7 @@ impl ComponentStorage {
         None
     }
 
-    fn get_component_vec_mut<T: Component + 'static>(&mut self) -> Option<&mut Vec<RefCell<T>>> {
+    pub fn get_component_vec_mut<T: Component + 'static>(&mut self) -> Option<&mut Vec<RefCell<T>>> {
         for component_vec in self.component_vectors.iter_mut() {
             let component_vec_ref = component_vec.as_mut();
             if let Some(cv) = component_vec_ref.as_any_mut().downcast_mut::<Vec<RefCell<T>>>() {
@@ -158,5 +158,5 @@ impl ComponentStorage {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Entity(pub u32);
