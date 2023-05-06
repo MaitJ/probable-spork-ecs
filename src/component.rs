@@ -1,6 +1,6 @@
 use std::{any::{Any, TypeId}, cell::{RefCell, Ref, RefMut}, borrow::BorrowMut, collections::HashMap};
 pub trait Component: PartialEq {
-    fn setup(&mut self);
+    fn setup(&mut self, world: &ComponentStorage);
     fn update(&mut self, world: &ComponentStorage);
 }
 
@@ -10,15 +10,15 @@ pub trait AsAny {
 }
 
 pub trait ComponentArray: AsAny {
-    fn setup_components(&self);
+    fn setup_components(&self, world: &ComponentStorage);
     fn update_components(&self, world: &ComponentStorage);
 }
 
 impl<T: Component + 'static> ComponentArray for Vec<RefCell<T>> {
-    fn setup_components(&self) {
+    fn setup_components(&self, world: &ComponentStorage) {
         self.iter().for_each(|c| {
             let mut component = c.borrow_mut();
-            component.setup();
+            component.setup(world);
         })
     }
     fn update_components(&self, world: &ComponentStorage) {
@@ -55,7 +55,7 @@ impl ComponentStorage {
     pub fn setup_components(&self) {
         self.component_vectors
             .iter()
-            .for_each(|component_vec| component_vec.setup_components());
+            .for_each(|component_vec| component_vec.setup_components(self));
     }
 
     pub fn update_components(&self) {
