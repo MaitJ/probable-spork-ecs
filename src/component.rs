@@ -41,7 +41,7 @@ impl<T: ComponentArray + 'static> AsAny for T {
 pub struct ComponentStorage {
     pub component_vectors: Vec<Box<dyn ComponentArray>>,
     component_table: Vec<Option<HashMap<TypeId, u32>>>,
-    entities: u32
+    pub entities: u32
 }
 
 impl ComponentStorage {
