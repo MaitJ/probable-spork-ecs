@@ -1,4 +1,9 @@
-use std::{any::{Any, TypeId}, cell::{RefCell, Ref, RefMut}, borrow::BorrowMut, collections::HashMap};
+use std::{
+    any::{Any, TypeId},
+    borrow::BorrowMut,
+    cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
+};
 pub trait Component: PartialEq {
     fn setup(&mut self, world: &ComponentStorage);
     fn update(&mut self, world: &ComponentStorage);
@@ -41,7 +46,8 @@ impl<T: ComponentArray + 'static> AsAny for T {
 pub struct ComponentStorage {
     pub component_vectors: Vec<Box<dyn ComponentArray>>,
     component_table: Vec<Option<HashMap<TypeId, u32>>>,
-    pub entities: u32
+    pub entities: u32,
+    alive_entities: Vec<Entity>,
 }
 
 impl ComponentStorage {
@@ -49,7 +55,8 @@ impl ComponentStorage {
         Self {
             component_vectors: vec![],
             component_table: vec![],
-            entities: 0
+            entities: 0,
+            alive_entities: vec![],
         }
     }
     pub fn setup_components(&self) {
@@ -65,23 +72,28 @@ impl ComponentStorage {
     }
 
     pub fn get_component_vec<T: Component + 'static>(&self) -> Option<&Vec<RefCell<T>>> {
-        for component_vec in self.component_vectors.iter() {
+        self.component_vectors.iter().find_map(|component_vec| {
             let component_vec_ref = component_vec.as_ref();
-            if let Some(cv) = component_vec_ref.as_any().downcast_ref::<Vec<RefCell<T>>>() {
-                return Some(cv);
-            }
-        }
-        None
+            component_vec_ref.as_any().downcast_ref::<Vec<RefCell<T>>>()
+        })
     }
 
-    pub fn get_component_vec_mut<T: Component + 'static>(&mut self) -> Option<&mut Vec<RefCell<T>>> {
-        for component_vec in self.component_vectors.iter_mut() {
+    pub fn get_component_vec_mut<T: Component + 'static>(
+        &mut self,
+    ) -> Option<&mut Vec<RefCell<T>>> {
+        self.component_vectors.iter_mut().find_map(|component_vec| {
             let component_vec_ref = component_vec.as_mut();
-            if let Some(cv) = component_vec_ref.as_any_mut().downcast_mut::<Vec<RefCell<T>>>() {
-                return Some(cv);
-            }
-        }
-        None
+            component_vec_ref.as_any_mut().downcast_mut::<Vec<RefCell<T>>>()
+        })
+    }
+
+    // Up to user to be careful with accessing entities that are "destroyed"
+    pub fn remove_entity(&mut self, entity: Entity) {
+        self.alive_entities.remove(entity.0 as usize);
+    }
+
+    pub fn get_entities(&self) -> Vec<Entity> {
+        self.alive_entities.clone()
     }
 
     pub fn add_component_vec<T: Component + 'static>(&mut self, component_vec: Vec<RefCell<T>>) {
@@ -89,72 +101,66 @@ impl ComponentStorage {
     }
 
     fn add_component<T: Component + 'static>(&mut self, component: T) -> u32 {
-        let mut id: u32 = 0;
-        if let Some(comp_vec) = self.get_component_vec_mut::<T>() {
-            id = comp_vec.len() as u32;
-            comp_vec.push(RefCell::new(component));
-        } else {
+        let Some(comp_vec) = self.get_component_vec_mut::<T>() else {
             let component_vec: Vec<RefCell<T>> = vec![RefCell::new(component)];
             self.add_component_vec(component_vec);
-        }
-        id
+
+            return 0;
+        };
+
+        comp_vec.push(RefCell::new(component));
+        comp_vec.len() as u32
     }
 
     pub fn create_entity(&mut self) -> Entity {
         let entity = Entity(self.entities);
         self.component_table.push(Some(HashMap::new()));
         self.entities += 1;
+        self.alive_entities.push(entity.clone());
         entity
     }
 
-    fn get_entity_component_table_mut(&mut self, entity: &Entity) -> Option<&mut HashMap<TypeId, u32>> {
-        if let Some(row) = self.component_table.get_mut(entity.0 as usize) {
-            if let Some(map) = row {
-                return Some(map);
-            }
-        }
-        None
+    fn get_entity_component_table_mut(
+        &mut self,
+        entity: &Entity,
+    ) -> Option<&mut HashMap<TypeId, u32>> {
+        self.component_table.get_mut(entity.0 as usize)?.as_mut()
     }
 
     pub fn register_component<T: Component + 'static>(&mut self, entity: &Entity, component: T) {
         let component_id = self.add_component(component);
-        if let Some(table) = self.get_entity_component_table_mut(entity) {
-            table.insert(TypeId::of::<T>(), component_id);
-        }
+        self.get_entity_component_table_mut(entity)
+            .and_then(|table| table.insert(TypeId::of::<T>(), component_id));
     }
 
     fn get_entity_component_id<T: Component + 'static>(&self, entity: &Entity) -> Option<u32> {
-        if let Some(row) = self.component_table.get(entity.0 as usize) {
-            if let Some(component_table) = row {
-                let type_id = TypeId::of::<T>();
-                if let Some(component_id) = component_table.get(&type_id) {
-                    return Some(*component_id);
-                }
-            }
-        }
-        None
+        let row = self.component_table.get(entity.0 as usize)?.as_ref();
+        row.and_then(|component_table| {
+            let type_id = TypeId::of::<T>();
+            let component_id = component_table.get(&type_id)?;
+            Some(*component_id)
+        })
     }
 
     pub fn get_entity_component<T: Component + 'static>(&self, entity: &Entity) -> Option<Ref<T>> {
-        if let Some(component_id) = self.get_entity_component_id::<T>(entity) {
-            if let Some(component_vec) = self.get_component_vec::<T>() {
-                if let Some(component) = component_vec.get(component_id as usize) {
-                    return Some(component.borrow());
-                }
-            }
-        }
-        None
+        self.get_component_vec::<T>().and_then(|component_vec| {
+            let component_id = self.get_entity_component_id::<T>(entity)?;
+            let component = component_vec.get(component_id as usize)?;
+
+            Some(component.borrow())
+        })
     }
 
-    pub fn get_entity_component_mut<T: Component + 'static>(&self, entity: &Entity) -> Option<RefMut<T>> {
-        if let Some(component_id) = self.get_entity_component_id::<T>(entity) {
-            if let Some(component_vec) = self.get_component_vec::<T>() {
-                if let Some(component) = component_vec.get(component_id as usize) {
-                    return Some(component.borrow_mut());
-                }
-            }
-        }
-        None
+    pub fn get_entity_component_mut<T: Component + 'static>(
+        &self,
+        entity: &Entity,
+    ) -> Option<RefMut<T>> {
+        self.get_component_vec::<T>().and_then(|component_vec| {
+            let component_id = self.get_entity_component_id::<T>(entity)?;
+            let component = component_vec.get(component_id as usize)?;
+
+            Some(component.borrow_mut())
+        })
     }
 }
 
